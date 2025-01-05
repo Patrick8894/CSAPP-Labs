@@ -156,7 +156,7 @@ void eval(char *cmdline)
     } else if (!strcmp(argv[0], "bg") || !strcmp(argv[0], "fg")) { // Background or Foreground command
         do_bgfg(argv);
     } else if (!strcmp(argv[0], "&")) { // Ignore singleton &
-        sigprocmask(SIG_SETMASK, &prev_one, NULL); // Unblock SIGCHLD
+        sigprocmask(SIG_SETMASK, &prev_one, NULL); // Unblock signals
         return;
     } else {
         if ((pid = fork()) == 0) { // Child process
@@ -177,7 +177,7 @@ void eval(char *cmdline)
         }
     }
 
-    sigprocmask(SIG_SETMASK, &prev_one, NULL); // Unblock SIGCHLD
+    sigprocmask(SIG_SETMASK, &prev_one, NULL); // Unblock signals
     return;
 }
 
