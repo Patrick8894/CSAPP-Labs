@@ -6,7 +6,7 @@
  * footers.  Blocks are never coalesced or reused. Realloc is
  * implemented directly using mm_malloc and mm_free.
  *
- * NOTE TO STUDENTS: Replace this header comment with your own header
+ * NOTE TO STUDENTS: Reuse_block this header comment with your own header
  * comment that gives a high level description of your solution.
  */
 #include <stdio.h>
@@ -25,97 +25,275 @@
 team_t team = {
 
     /* Team name */
-    "ateam",
+    "xxx",
     /* First member's full name */
-    "Harry Bovik",
+    "Bo-Hao Wu",
     /* First member's email address */
-    "bovik@cs.cmu.edu",
+    "bohaowu2@illinois.edu",
     /* Second member's full name (leave blank if none) */
     "",
     /* Second member's email address (leave blank if none) */
     ""
 };
 
-/* single word (4) or double word (8) alignment */
-#define ALIGNMENT 8
-
-/* rounds up to the nearest multiple of ALIGNMENT */
-#define ALIGN(size) (((size) + (ALIGNMENT-1)) & ~0x7)
-
-
-#define SIZE_T_SIZE (ALIGN(sizeof(size_t)))
-
 /* Constants and macros */
+#define ALIGNMENT 8
 #define WSIZE 4 /* Word & header/footer size in Byte */
-#define DSIZE 8 /* Double words size in Byte */
-#define CHUNKSIZE (1<<12) /* Extend heap size (4K Byte) when failed to find a proper block */
+#define CHUNKSIZE (1<<12) /* Chunk size in Byte */
 
-#define MAX(x, y) ((x) > (y)? (x) : (y))
+/* Global variables */
+static char *sg_free_list[13];
 
-/* PACK size & allocated bit into a word */
-#define PACK(size, alloc) ((size) | (alloc))
+/* Helper functions for block management */
+static void mm_put(char *ptr, unsigned int val)
+{
+    *(unsigned int *)ptr = val;
+}
 
-/* read & write a word at address p */
-#define GET(p) (*(unsigned int *)(p))
-#define PUT(p, val) (*(unsigned int *)(p) = (val))
+static unsigned int mm_get(char *ptr)
+{
+    return *(unsigned int *)ptr;
+}
 
-/* get size and allocated bit of a block */
-#define GET_SIZE(p) (GET(p) & ~0x7)
-#define GET_ALLOC(p) (GET(p) & 0x1)
+static unsigned int build_header_footer(size_t size, int alloc)
+{
+    return size | alloc;
+}
 
-/* compute address of header and footer from a given pointer of a block */
-#define HDRP(bp) ((char *)(bp) - WSIZE)
-#define FTRP(bp) ((char *)(bp) + GET_SIZE(HDRP(bp)) - DSIZE)
+static size_t get_size(char *ptr)
+{
+    return mm_get(ptr) & ~0x7;
+}
 
-/* compute address of next and previous block from a given pointer of a block */
-#define NEXT_BLKP(bp) ((char *)(bp) + GET_SIZE(((char *)(bp) - WSIZE)))
-#define PREV_BLKP(bp) ((char *)(bp) - GET_SIZE(((char *)(bp)- DSIZE)))
+static size_t get_block_size(char *block)
+{
+    return get_size(block - WSIZE);
+}
 
-/* compute address of next and previous free block from a given pointer of a free block */
-#define NEXT_PTR(bp) ((char *)(bp) + WSIZE)
-#define PREV_PTR(bp) ((char *)(bp))
-#define GET_NEXT(bp) (*(char **)(NEXT_PTR(bp)))
-#define GET_PREV(bp) (*(char **)(bp))
-#define PUT_PTR(p, ptr) (*(unsigned int *)(p) = (unsigned int)(ptr))
+static int get_alloc(char *block)
+{
+    return mm_get(block - WSIZE) & 0x1;
+}
 
-static char *heap_listp;
-static void *extend_heap(size_t words);
-static void *coalesce(void *bp);
+static char *get_next_block(char *block)
+{
+    return block + get_block_size(block);
+}
 
-static void *find_fit(size_t asize);
-static void place(void *bp, size_t asize);
+static char *get_prev_block(char *block)
+{
+    return block - get_size(block - WSIZE * 2);
+}
 
-static void *seg_listp[13];
-static void insert_free_blk(void *bp);
-static void remove_free_blk(void *bp);
+static char *get_next_free_addr(char *block)
+{
+    return block + WSIZE;
+}
 
-static int get_list_idx(size_t asize);
+static char *get_prev_free_addr(char *block)
+{
+    return block;
+}
+
+static char *get_next_free(char *block)
+{
+    return *(char**)(get_next_free_addr(block));
+}
+
+static char *get_prev_free(char *block)
+{
+    return *(char**)(get_prev_free_addr(block));
+}
+
+static void set_next_free(char *block, char *next)
+{
+    mm_put(get_next_free_addr(block), (unsigned int)next);
+}
+
+static void set_prev_free(char *block, char *prev)
+{
+    mm_put(get_prev_free_addr(block), (unsigned int)prev);
+}
+
+static void *get_header_addr(char *block)
+{
+    return block - WSIZE;
+}
+
+static void *get_footer_addr(char *block)
+{
+    return block + get_block_size(block) - WSIZE * 2;
+}
+
+/* Helper functions for free list management */
+static void init_free_list()
+{
+    for (int i = 0; i < 13; i++)
+        sg_free_list[i] = NULL;
+}
+
+static int find_list_index(size_t size)
+{
+    int index = 0;
+    while (size > 1 && index < 12)
+    {
+        size >>= 1;
+        index++;
+    }
+    return index;
+}
+
+static void insert_free_block(char *block)
+{
+    size_t size = get_block_size(block);
+    int index = find_list_index(size);
+    char *root = sg_free_list[index];
+    char *prev = NULL;
+    char *next = root;
+    while (next)
+    {
+        if (size < get_block_size(next))
+            break;
+        prev = next;
+        next = get_next_free(next);
+    }
+
+    if (next == root)
+        sg_free_list[index] = block;
+
+    set_prev_free(block, prev);
+    set_next_free(block, next);
+
+    if (prev)
+        set_next_free(prev, block);
+
+    if (next)
+        set_prev_free(next, block);
+}
+
+static void remove_free_block(char *block)
+{
+    size_t size = get_block_size(block);
+    int index = find_list_index(size);
+    char *prev = get_prev_free(block);
+    char *next = get_next_free(block);
+
+    if (prev)
+        set_next_free(prev, next);
+    else
+        sg_free_list[index] = next;
+
+    if (next)
+        set_prev_free(next, prev);
+}
+
+static char *find_fit(size_t size)
+{
+    int index = find_list_index(size);
+    for (int i = index; i < 13; i++)
+    {
+        char *block = sg_free_list[i];
+        while (block)
+        {
+            if (get_block_size(block) >= size)
+                return block;
+            block = get_next_free(block);
+        }
+    }
+    return NULL;
+}
+
+static void use_block(void *block, size_t size) {
+
+    size_t block_size = get_block_size(block);
+    size_t remain_size = block_size - size;
+
+    remove_free_block(block);
+
+    if (remain_size >= WSIZE * 4)
+    {
+        mm_put(get_header_addr(block), build_header_footer(size, 1));
+        mm_put(get_footer_addr(block), build_header_footer(size, 1));
+
+        char *next_block = get_next_block(block);
+        mm_put(get_header_addr(next_block), build_header_footer(remain_size, 0));
+        mm_put(get_footer_addr(next_block), build_header_footer(remain_size, 0));
+
+        insert_free_block(next_block);
+    }
+    else
+    {
+        mm_put(get_header_addr(block), build_header_footer(block_size, 1));
+        mm_put(get_footer_addr(block), build_header_footer(block_size, 1));
+    }
+}
+
+/* Helper functions for heap management */
+static char *coalesce(char *block){
+
+    char *prev_block = get_prev_block(block);
+    char *next_block = get_next_block(block);
+    size_t prev_alloc = get_alloc(prev_block);
+    size_t next_alloc = get_alloc(next_block);
+    size_t size = get_block_size(block);
+    size_t new_size = size;
+
+    char *new_header_addr = prev_alloc ? get_header_addr(block) : get_header_addr(prev_block);
+    char *new_footer_addr = next_alloc ? get_footer_addr(block) : get_footer_addr(next_block);
+
+    if (!prev_alloc)
+    {
+        new_size += get_block_size(prev_block);
+        remove_free_block(prev_block);
+    }
+
+    if (!next_alloc)
+    {
+        new_size += get_block_size(next_block);
+        remove_free_block(next_block);
+    }
+
+    mm_put(new_header_addr, build_header_footer(new_size, 0));
+    mm_put(new_footer_addr, build_header_footer(new_size, 0));
+
+    insert_free_block(new_header_addr + WSIZE);
+    return new_header_addr + WSIZE;
+}
+
+static char *extend_heap(size_t words)
+{
+    size_t size;
+    void *block;
+
+    size = words % 8 == 0 ? words : (words + 8 - (words % 8));
+    if ((block = mem_sbrk(size)) == (void *)-1)
+        return NULL;
+
+    mm_put(get_header_addr(block), build_header_footer(size, 0));
+    mm_put(get_footer_addr(block), build_header_footer(size, 0));
+    mm_put(get_header_addr(get_next_block(block)), build_header_footer(0, 1));
+
+    return coalesce(block);
+}
 
 /* 
  * mm_init - initialize the malloc package.
  */
 int mm_init(void)
 {   
-    /* Create initial empty heap */
-    if ((heap_listp = mem_sbrk(4 * WSIZE)) == (void *) - 1)
-        return -1;
-    PUT(heap_listp, 0);
-    PUT(heap_listp + WSIZE, PACK(DSIZE, 1));
-    PUT(heap_listp + 2 * WSIZE, PACK(DSIZE, 1));
-    PUT(heap_listp + 3 * WSIZE, PACK(0, 1));
-    heap_listp += DSIZE;
+    init_free_list();
 
-    /* Extend heap by CHUNKSIZE */
-    char *bp;
-    for (int i = 0; i < 13; i++)
-        seg_listp[i] = NULL;
-        
-    if ((bp = extend_heap(CHUNKSIZE/WSIZE)) == NULL)
+    char *block = mem_sbrk(4 * WSIZE);
+    if (block == (void *)-1)
         return -1;
 
-    /* Set Null pointers*/
-    PUT_PTR(PREV_PTR(bp), NULL);
-    PUT_PTR(NEXT_PTR(bp), NULL);
+    mm_put(block, 0);
+    mm_put(block + WSIZE, build_header_footer(WSIZE * 2, 1));
+    mm_put(block + WSIZE * 2, build_header_footer(WSIZE * 2, 1));
+    mm_put(block + WSIZE * 3, build_header_footer(0, 1));
+
+    if (extend_heap(CHUNKSIZE) == NULL)
+        return -1;
 
     return 0;
 }
@@ -126,32 +304,28 @@ int mm_init(void)
  */
 void *mm_malloc(size_t size)
 {
-    size_t asize;
-    char* bp;
+    size_t block_size;
+    size_t extend_size;
+    char *block;
 
-    /* ignore spurious request */
     if (size == 0)
         return NULL;
-    
-    /* adjust size for alignment */
-    if (size <= DSIZE)
-        asize = 2 * DSIZE;
-    else
-        asize = (((size + DSIZE) + (DSIZE - 1))/ DSIZE) * DSIZE; /* csapp p73. (x + (1<<k) - 1) >> k */
-    
-    /* search free list for a fit */
-    if ((bp = find_fit(asize)) != NULL) {
-        place(bp, asize);
-        return bp;
+
+    block_size = size % 8 == 0 ? size : (size + 8 - (size % 8));
+    block_size += WSIZE * 2;
+
+    if ((block = find_fit(block_size)) != NULL)
+    {
+        use_block(block, block_size);
+        return block;
     }
 
-    /* expand heap if no fit found */
-    size_t extend_size;
-    extend_size = MAX(asize, CHUNKSIZE);
-    if ((bp = extend_heap(extend_size/WSIZE)) == NULL)
+    extend_size = block_size > CHUNKSIZE ? block_size : CHUNKSIZE;
+    if ((block = extend_heap(extend_size)) == NULL)
         return NULL;
-    place(bp, asize);
-    return bp;
+
+    use_block(block, block_size);
+    return block;
 }
 
 /*
@@ -159,9 +333,9 @@ void *mm_malloc(size_t size)
  */
 void mm_free(void *bp)
 {
-    size_t size = GET_SIZE(HDRP(bp));
-    PUT(HDRP(bp), PACK(size, 0));
-    PUT(FTRP(bp), PACK(size, 0));
+    mm_put(get_header_addr(bp), build_header_footer(get_block_size(bp), 0));
+    mm_put(get_footer_addr(bp), build_header_footer(get_block_size(bp), 0));
+
     coalesce(bp);
 }
 
@@ -170,173 +344,27 @@ void mm_free(void *bp)
  */
 void *mm_realloc(void *ptr, size_t size)
 {
-    void *oldptr = ptr;
     void *newptr;
     size_t copySize;
 
-    newptr = mm_malloc(size);
-    if (newptr == NULL)
-      return NULL;
-    size = GET_SIZE(HDRP(oldptr));
-    copySize = GET_SIZE(HDRP(newptr));
-    if (size < copySize)
-      copySize = size;
-    memcpy(newptr, oldptr, copySize-WSIZE);
-    mm_free(oldptr);
-    return newptr;
-}
-
-static void *extend_heap(size_t words) {
-
-    char *bp;
-    size_t size;
-    size = (words % 2)? (words + 1) * WSIZE: words * WSIZE;
-
-    if ((long)(bp = mem_sbrk(size)) == -1)
+    if (size == 0)
+    {
+        mm_free(ptr);
         return NULL;
-    PUT(HDRP(bp), PACK(size, 0)); /* Header */
-    PUT(FTRP(bp), PACK(size, 0)); /* Footer */
-    PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1)); /* New epilogue header */
-    PUT_PTR(PREV_PTR(bp), NULL);
-    PUT_PTR(NEXT_PTR(bp), NULL);
-
-    return coalesce(bp);
-}
-
-static void *coalesce(void *bp) {
-
-    size_t prev_alloc, next_alloc;
-    size_t size;
-
-    void *next_blk = NEXT_BLKP(bp);
-    void *prev_blk = PREV_BLKP(bp);
-
-    prev_alloc = GET_ALLOC(FTRP(PREV_BLKP(bp)));
-    next_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
-    size = GET_SIZE(HDRP(bp));
-    
-    if (prev_alloc && next_alloc) {             /* case 1 */
-        insert_free_blk(bp);
-        return bp;
-    }
-    else if (prev_alloc && (!next_alloc)) {     /* case 2 */
-        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        remove_free_blk(next_blk);
-    }
-    else if ((!prev_alloc) && next_alloc) {     /* case 3 */
-        size += GET_SIZE(FTRP(PREV_BLKP(bp)));
-        remove_free_blk(prev_blk);
-        bp = prev_blk;
-    } 
-    else {                                      /* case 4 */
-        size += GET_SIZE(HDRP(NEXT_BLKP(bp)));
-        size += GET_SIZE(FTRP(PREV_BLKP(bp)));
-        remove_free_blk(next_blk);
-        remove_free_blk(prev_blk);
-        bp = prev_blk;
-    }
-    PUT(HDRP(bp), PACK(size, 0));
-    PUT(FTRP(bp), PACK(size, 0));
-    insert_free_blk(bp);
-    return bp;
-}
-
-static void *find_fit(size_t asize) {
-
-    void *bp;
-    int idx = get_list_idx(asize);
-    for (; idx < 13; idx++) {
-        bp = seg_listp[idx];
-        for (; bp != NULL; bp = GET_NEXT(bp)) {
-            if (GET_SIZE(HDRP(bp)) >= asize)
-                return bp;
-        }
-    }
-    return NULL;
-}
-
-static void place(void *bp, size_t asize) {
-
-    size_t blk_size = GET_SIZE(HDRP(bp));
-    size_t split_size = blk_size - asize;
-
-    remove_free_blk(bp);
-    if (split_size < 16) {
-        PUT(HDRP(bp), PACK(blk_size, 1));
-        PUT(FTRP(bp), PACK(blk_size, 1));
-    }
-    else {
-        PUT(HDRP(bp), PACK(asize, 1));
-        PUT(FTRP(bp), PACK(asize, 1));
-
-        bp = NEXT_BLKP(bp);
-        PUT(HDRP(bp), PACK(split_size, 0));
-        PUT(FTRP(bp), PACK(split_size, 0));
-        insert_free_blk(bp);
-    }
-}
-
-static void remove_free_blk(void *bp) {
-
-    void *prev_blk = GET_PREV(bp);
-    void *next_blk = GET_NEXT(bp);
-
-    size_t size = GET_SIZE(HDRP(bp));
-    int idx = get_list_idx(size);
-
-    if (!prev_blk && !next_blk)     /* empty linked-list */
-        seg_listp[idx] = NULL;
-    else if (!prev_blk && next_blk) /* first node */
-    {
-        PUT_PTR(PREV_PTR(next_blk), NULL);
-        seg_listp[idx] = next_blk;
-    }
-    else if (prev_blk && !next_blk) /* last node */
-    {
-        PUT_PTR(NEXT_PTR(prev_blk), NULL);
-    } else
-    {
-        PUT_PTR(PREV_PTR(next_blk), prev_blk);
-        PUT_PTR(NEXT_PTR(prev_blk), next_blk);
-    }
-}
-
-/* insert free block into segragated free list in order of block size */
-static void insert_free_blk(void *bp) {
-    
-    size_t size = GET_SIZE(HDRP(bp));
-    int idx = get_list_idx(size);
-    void *root = seg_listp[idx];
-    void *prev = NULL;
-    void *next = root;
-    while (next) {
-         if (GET_SIZE(HDRP(bp)) < GET_SIZE(HDRP(next))) break;
-         prev = next;
-         next = GET_NEXT(next);
     }
 
-    if (next == root)
-    {
-        PUT_PTR(PREV_PTR(bp), NULL);
-        PUT_PTR(NEXT_PTR(bp), next);
-        if (next)
-            PUT_PTR(PREV_PTR(next), bp);
-        seg_listp[idx] = bp;
-    } else
-    {
-        PUT_PTR(PREV_PTR(bp), prev);
-        PUT_PTR(NEXT_PTR(bp), next);
-        PUT_PTR(NEXT_PTR(prev), bp);
-        if (next)
-            PUT_PTR(PREV_PTR(next), bp);
-    }
-}
+    if (ptr == NULL)
+        return mm_malloc(size);
 
-static int get_list_idx(size_t asize) {
-    int idx = 0;
-    while (asize > 1 && idx < 12) {
-        asize >>= 1;
-        idx++;
-    }
-    return idx;
+    if ((newptr = mm_malloc(size)) == NULL)
+        return NULL;
+
+    copySize = get_size(ptr) - WSIZE * 2;
+    if (size < copySize)
+        copySize = size;
+
+    memcpy(newptr, ptr, copySize);
+    mm_free(ptr);
+
+    return newptr;
 }

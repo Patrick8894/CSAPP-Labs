@@ -223,8 +223,7 @@ int parseline(const char *cmdline, char **argv)
  */
 void listjobs() 
 {
-    int i;
-    for (i = 0; i < MAXJOBS; i++) {
+    for (int i = 0; i < MAXJOBS; i++) {
         if (jobs[i].pid != 0) {
             printf("[%d] (%d) ", jobs[i].jid, jobs[i].pid);
             switch (jobs[i].state) {
@@ -426,8 +425,7 @@ void sigchld_handler(int sig)
  */
 pid_t fgpid(job_t *jobs)
 {
-    int i;
-    for (i = 0; i < MAXJOBS; i++) {
+    for (int i = 0; i < MAXJOBS; i++) {
         if (jobs[i].state == FG) {
             return jobs[i].pid;
         }
@@ -437,8 +435,7 @@ pid_t fgpid(job_t *jobs)
 
 void init_jobs(job_t *jobs) 
 {
-    int i;
-    for (i = 0; i < MAXJOBS; i++) {
+    for (int i = 0; i < MAXJOBS; i++) {
         jobs[i].pid = 0;
         jobs[i].jid = 0;
         jobs[i].state = UNDEF;
@@ -451,8 +448,7 @@ void init_jobs(job_t *jobs)
  */
 job_t *get_job_by_jid(int jid) 
 {
-    int i;
-    for (i = 0; i < MAXJOBS; i++) {
+    for (int i = 0; i < MAXJOBS; i++) {
         if (jobs[i].jid == jid) {
             return &jobs[i];
         }
@@ -465,8 +461,7 @@ job_t *get_job_by_jid(int jid)
  */
 job_t *get_job_by_pid(pid_t pid) 
 {
-    int i;
-    for (i = 0; i < MAXJOBS; i++) {
+    for (int i = 0; i < MAXJOBS; i++) {
         if (jobs[i].pid == pid) {
             return &jobs[i];
         }
@@ -479,11 +474,10 @@ job_t *get_job_by_pid(pid_t pid)
  */
 int addjob(pid_t pid, int state, char *cmdline) 
 {
-    int i;
     if (pid < 1)
         return 0;
 
-    for (i = 0; i < MAXJOBS; i++) {
+    for (int i = 0; i < MAXJOBS; i++) {
         if (jobs[i].pid == 0) {
             jobs[i].pid = pid;
             jobs[i].state = state;
@@ -506,11 +500,10 @@ int addjob(pid_t pid, int state, char *cmdline)
  */
 int deletejob(pid_t pid)
 {
-    int i;
     if (pid < 1)
         return 0;
 
-    for (i = 0; i < MAXJOBS; i++) {
+    for (int i = 0; i < MAXJOBS; i++) {
         if (jobs[i].pid == pid) {
             clearjob(&jobs[i]);
             nextjid = maxjid(jobs) + 1;
@@ -536,9 +529,9 @@ void clearjob(job_t *job)
  */
 int maxjid(job_t *jobs) 
 {
-    int i, max = 0;
+    int max = 0;
 
-    for (i = 0; i < MAXJOBS; i++) {
+    for (int i = 0; i < MAXJOBS; i++) {
         if (jobs[i].jid > max)
             max = jobs[i].jid;
     }
